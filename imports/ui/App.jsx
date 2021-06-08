@@ -1,5 +1,5 @@
 import { Meteor } from 'meteor/meteor';
-import React, { useState, Fragment } from 'react';
+import React, { useState, Fragment, useEffect, useRef } from 'react';
 import { useTracker } from 'meteor/react-meteor-data';
 import { TasksCollection } from '/imports/db/TasksCollection';
 import { Task } from './Task.jsx';
@@ -15,42 +15,72 @@ const deleteTask = ({_id}) => Meteor.call('tasks.remove', _id);
 
 export const App = () => {
 
-  const user = useTracker(() => Meteor.user());
+  const user = useTracker(() => Meteor.user(), []);
+
+  const [tasks, setTasks] = useState([]);
+
+  const [allTasks, setAllTasks] = useState([]);
 
   const [hideCompleted, setHideCompleted] = useState(false);
 
-  const hideCompletedFilter = { isChecked: { $ne: true } };
+  const hideCompletedFilter = { isChecked: false };
 
   const userFilter = user ? { userId: user._id} : {};
 
   const pendingOnlyFilter = { ...hideCompletedFilter, ...userFilter};
+
+  const handleHideCompletedOptions = (tareas)=>{
+    const filterTasks = hideCompleted
+      ? tareas.filter((task) => task.isChecked === false)
+      : tareas;
+
+    setTasks(filterTasks);
+  };
+
   
-  const { tasks, pendingTasksCount, isLoading } = useTracker(() => {
-    const noDataAvailable = { tasks: [], pendingTasksCount: 0 };
-    if (!Meteor.user()) {
-      return noDataAvailable;
-    }
-    const handler = Meteor.subscribe('tasks');
+  const initialRenderHideCompleted = useRef(true);
 
-
-    if (!handler.ready()) {
-      return { ...noDataAvailable, isLoading: true };
-    }
-
-    const hideValue = hideCompleted ? pendingOnlyFilter : userFilter;
-    
-    const tasks = TasksCollection.find(
-      
-      hideCompleted ? pendingOnlyFilter : userFilter,
-      {
-        sort: { createdAt: -1 },
+  const initialRender = useRef(true);
+  
+  useEffect(() => {
+    console.log(hideCompleted);
+    Meteor.call('tasks.findAll', hideCompleted,(err, res) => {
+      if (err){
+        console.log(err);
+        setTasks([]);
+        setAllTasks([]);
       }
-    ).fetch();
-    const pendingTasksCount = TasksCollection.find(pendingOnlyFilter).count();
+        setTasks(res);
+        setAllTasks(res);
+    });
+    
+    
+  }, [user]);
 
-    return { tasks, pendingTasksCount };
-  });
+  useEffect(() => {
+    console.log(hideCompleted);
+    const filterParams = JSON.stringify(hideCompleted ? pendingOnlyFilter : userFilter);
+    console.log(`filtro consulta: ${filterParams}`);
+    if(initialRenderHideCompleted.current){
+      initialRenderHideCompleted.current = false;
 
+      return;
+    }
+    Meteor.call('tasks.findAll', hideCompleted,(err, res) => {
+      if (err){
+        console.log(err);
+        setTasks([]);
+        setAllTasks([]);
+      }
+        setTasks(res);
+        setAllTasks(res);
+    });
+
+    handleHideCompletedOptions(allTasks);
+    
+  }, [hideCompleted]);
+
+  const pendingTasksCount = TasksCollection.find(pendingOnlyFilter).count();
 
   const pendingTasksTitle = `${
     pendingTasksCount ? ` (${pendingTasksCount})` : ''
@@ -85,8 +115,6 @@ export const App = () => {
           {hideCompleted ? 'Mostrar todas' : 'Ocultar tareas completadas'}
         </button>
       </div>
-
-      {isLoading && <div className="loading"> Cargando... </div>}
       
 
       <ul className="tasks">
